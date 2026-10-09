@@ -5,6 +5,7 @@ bdxl_mode: explicit                               # BDXL-05: explicit | wildcard
 dns_ttl: 3600                                     # BDXL-06
 pilot_end_date: 2027-12-31                        # PLACEHOLDER: REG-05 upper bound for ExpirationDate
 trust_anchor_file: trust/webuild-smp-ca.pem       # SIG-04: published at /trust/trust-anchor.pem
+crl_file: trust/webuild-smp-ca.crl                # SIG-09: published at /trust/webuild-smp-ca.crl
 # On-disk path layouts. Cloudflare Pages decodes the request path before lookup, so
 # decoded file names serve both encodings (live-host check, SPEC section 12).
 path_layouts: [decoded]

@@ -18,6 +18,7 @@ This is "the spike": run it against the live host before relying on it.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import base64
 import hashlib
 import re
@@ -115,6 +116,33 @@ def probe(smp: str, participant: str, service: str, ca: Path):
         check("GET ServiceGroup", False, str(ex))
 
 
+def probe_crl(base: str, ca: Path):
+    """SIG-09: the published signing cert's CRL distribution point serves a valid CRL."""
+    from cryptography import x509
+    try:
+        cert = x509.load_pem_x509_certificate(requests.get(f"{base}/trust/smp-signing-cert.pem", timeout=15).content)
+        dps = cert.extensions.get_extension_for_class(x509.CRLDistributionPoints).value
+        url = next(n.value for dp in dps for n in (dp.full_name or []))
+    except Exception as ex:  # noqa: BLE001
+        check("Signing cert has a CRL distribution point (SIG-09)", False, ex.__class__.__name__)
+        return
+    r = requests.get(url, timeout=15)
+    check("GET CRL (SIG-09)", r.status_code == 200, f"{r.status_code} {r.headers.get('content-type', '-')} {url}")
+    if r.status_code != 200:
+        return
+    try:
+        crl = x509.load_der_x509_crl(r.content)
+    except ValueError as ex:
+        check("CRL is DER (SIG-09)", False, str(ex))
+        return
+    anchor = x509.load_pem_x509_certificate(ca.read_bytes())
+    check("CRL signed by trust anchor (SIG-09)", crl.is_signature_valid(anchor.public_key()))
+    check("CRL not expired (SIG-09)", crl.next_update_utc > dt.datetime.now(dt.timezone.utc),
+          f"nextUpdate {crl.next_update_utc:%Y-%m-%d}")
+    check("Signing cert not revoked (SIG-09)",
+          crl.get_revoked_certificate_by_serial_number(cert.serial_number) is None, f"serial {cert.serial_number:x}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", help="SMP base URL for index.json (default: config smp_base_url)")
@@ -127,6 +155,8 @@ def main():
     for e in requests.get(f"{base}/index.json", timeout=15).json():
         smp = base if args.no_dns else (resolve_smp(e["participant"], cfg["bdxl_zone"]) or base)
         probe(smp, e["participant"], e["service"], args.ca)
+
+    probe_crl(base, args.ca)
 
     unknown = "urn:oasis:names:tc:ebcore:partyid-type:iso6523:0192::000000000"
     r = requests.get(f"{base}/{PREFIX}/{quote(unknown, safe='')}/services/x", timeout=15)

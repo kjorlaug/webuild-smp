@@ -78,7 +78,7 @@ Participants are identified with ebCore party ID schemes. Services (document typ
 - **ID-01** Registrants MUST register participant scheme and value in lower case.
 - **ID-02** Senders MUST lower-case the full participant identifier `{scheme}::{value}` before hashing (section 5) and before building the SMP URL (section 6).
 - **ID-03** Participant schemes MUST come from the list the operator publishes. The initial list is ISO 6523 ICDs 0192, 0088 and 0208, as ebCore URNs.
-- **ID-04** Service and process identifiers are case-sensitive. They MUST be used exactly as registered.
+- **ID-04** Service and process identifiers are case-insensitive, as [SMP2] defines unless a scheme says otherwise; clients such as phoss fold `bdx-docid-qns` values to lower case. Senders MUST use them either exactly as registered or fully lower-cased. The SMP MUST serve both forms.
 - **ID-05** In URLs, each identifier MUST be percent-encoded as one path segment, as [SMP2] requires. At least `:` becomes `%3A`, `#` becomes `%23` and `/` becomes `%2F`.
 - **ID-06** The SMP MUST also accept `:` unencoded, because clients differ in practice.
 
@@ -123,13 +123,13 @@ The SMP implements the [SMP2] REST binding (`oasis-bdxr-smp-2`), read-only, unde
 - **SMP-01** The SMP MUST be reachable over HTTPS on port 443 with a publicly trusted TLS certificate.
 - **SMP-02** A registered resource MUST return HTTP 200 with a UTF-8 document that has an XML declaration and validates against the [SMP2] XSDs. `SMPVersionID` MUST be `2.0`.
 - **SMP-03** An unknown participant or service MUST return HTTP 404.
-- **SMP-04** Senders MUST follow HTTP 301, 302, 307 and 308 redirects within the same host.
+- **SMP-04** The SMP MUST answer every resource URL in this section with HTTP 200 directly, without a redirect: common clients, such as phoss smp-client, do not follow HTTP redirects. Senders MAY follow same-host redirects.
 - **SMP-05** Responses MUST carry `Content-Type: application/xml`, as [SMP2] requires.
 - **SMP-06** Senders MUST request ServiceMetadata directly. They MUST NOT depend on fetching the ServiceGroup first.
 - **SMP-07** Every `ProcessMetadata` MUST contain `Endpoint` elements and MUST NOT contain `Redirect`.
 - **SMP-08** Every `Endpoint` MUST contain `AddressURI`, `ExpirationDate` and at least one `Certificate`.
 
-**Static hosting.** A static host stores the ServiceGroup as `index.html` inside the participant's folder, so it is reached through a redirect. SMP-04 allows that. SMP-05 rules out hosts that cannot set response headers, such as GitHub Pages. Hosts that can, such as Cloudflare Pages or Netlify, conform.
+**Static hosting.** `/bdxr-smp-2/{participant}` is both a resource and the parent of `services/`. A static host that serves `{name}.html` at `/{name}`, as Cloudflare Pages does, can store the ServiceGroup as `{participant}.html` beside the `{participant}/` folder and answer without a redirect (SMP-04). Storing it only as `{participant}/index.html` produces a 308, which phoss rejects. SMP-05 rules out hosts that cannot set response headers, such as GitHub Pages. Hosts that can, such as Cloudflare Pages or Netlify, conform.
 
 ## 7. Metadata signing and trust anchors
 
@@ -143,6 +143,7 @@ Signing is optional in [SMP2]; in WE BUILD it is mandatory. Both ServiceGroup an
 - **SIG-06** The signing key MUST NOT be stored in the registry repository. It MAY be held as a CI secret for the pilot. It MUST be rotated if any person with admin rights on the repository leaves the pilot.
 - **SIG-07** Endpoint certificates are carried as `Certificate/ContentBinaryObject` (base64 DER, `mimeCode="application/base64"`). They MUST chain to the anchor that the endpoint's transport profile names (section 8).
 - **SIG-08** The SMP signing certificate MUST carry KeyUsage `digitalSignature`. The trust anchor MUST carry `keyCertSign` and BasicConstraints `CA:true`. Common verifiers reject chains without these.
+- **SIG-09** The SMP signing certificate MUST carry an HTTP CRL distribution point. The operator MUST publish there a DER CRL signed by the trust anchor (`{SMP base URL}/trust/webuild-smp-ca.crl`, `Content-Type: application/pkix-crl`), MUST re-sign it before its `nextUpdate`, and MUST list every retired or compromised signing certificate. Senders SHOULD check revocation; phoss does by default and rejects a certificate whose status it cannot determine.
 
 Metadata is signed before publication, so a compromised host can withhold or roll back metadata but cannot forge it. Rollback is limited by `ExpirationDate` (REG-05).
 
@@ -187,7 +188,7 @@ A sender or operator conforms if it meets every MUST in its column.
 | ID-01 | Participant scheme and value in lower case | check | MUST | |
 | ID-02 | Lower-case participant ID before hashing and URL building | | | MUST |
 | ID-03 | Participant scheme from the published list | check | MUST | |
-| ID-04 | Service and process IDs used exactly as registered | | MUST | MUST |
+| ID-04 | Service and process IDs as registered or lower-cased; SMP serves both | MUST | | MUST |
 | ID-05 | Each identifier percent-encoded as one segment | MUST | | MUST |
 | ID-06 | Accept unencoded `:` | MUST | | |
 | BDXL-01 | Published, configurable BDXL zone | MUST | | MUST |
@@ -199,7 +200,7 @@ A sender or operator conforms if it meets every MUST in its column.
 | SMP-01 | HTTPS 443, public TLS cert | MUST | | |
 | SMP-02 | 200, XSD-valid, `SMPVersionID` 2.0 | MUST | | |
 | SMP-03 | 404 for unknown resources | MUST | | |
-| SMP-04 | Follow same-host redirects | | | MUST |
+| SMP-04 | Resources served without redirect | MUST | | MAY follow |
 | SMP-05 | `Content-Type: application/xml` | MUST | | |
 | SMP-06 | Direct ServiceMetadata lookup | | | MUST |
 | SMP-07 | Endpoints only, no `Redirect` | MUST | | |
@@ -209,6 +210,7 @@ A sender or operator conforms if it meets every MUST in its column.
 | SIG-06 | Key outside repo, rotation on admin change | MUST | | |
 | SIG-07 | Endpoint certs chain to profile anchor | check | MUST | SHOULD verify |
 | SIG-08 | KeyUsage on signing cert and anchor | MUST | | |
+| SIG-09 | CRL distribution point, current CRL, retired certs listed | MUST | | SHOULD check |
 | TP-01–03 | Listed profiles only, ignore unsupported | check | MUST | MUST |
 | REG-01–06 | PR-based registration, review, expiry | MUST | MUST | |
 
@@ -221,7 +223,7 @@ The reference implementation is this repository; its YAML records are the regist
 | Pipeline job | Runs on | Does | Spec |
 | --- | --- | --- | --- |
 | validate | every PR | Schema, lower-case IDs, allowed schemes and profiles, cert parse, dates, file-name length; trial build with a throwaway key; OASIS XSD validation | REG-02, ID-01, ID-03, TP-01, REG-05, SMP-02 |
-| build | merge to `main`, weekly | Generates and signs ServiceGroup and ServiceMetadata, validates against the XSDs, verifies its own signatures | SMP-02, SIG-01–03 |
+| build | merge to `main`, weekly | Generates and signs ServiceGroup and ServiceMetadata, validates against the XSDs, verifies its own signatures; refuses a revoked signing cert or an expired CRL, and warns 30 days before `nextUpdate` | SMP-02, SIG-01–03, SIG-09 |
 | deploy | after build | Publishes the site, with a `_headers` file that sets `application/xml` | SMP-01, SMP-05 |
 | dns | after deploy | Syncs U-NAPTR records to the BDXL zone, then waits until its authoritative servers serve them | BDXL-03, BDXL-05, REG-04 |
 | smoke | after dns | Probes the live service as a sender, including negative tests | Sections 5–7 |
@@ -251,12 +253,13 @@ The operator publishes the test participant and the expected results.
 ## 12. Open issues
 
 - [x] **Live host check.** Confirm on real Cloudflare Pages what the emulator showed: decoded file names, `_headers` applied, 308 for the ServiceGroup. Then set `path_layouts: [decoded]`. *Done 2026-10-09 on smp.webuild.kjorlaug.no: decoded-only layout serves both encodings, `_headers` applied, ServiceGroup 200 via 308; smoke_test.py 10/10 (`--no-dns`).*
-- [ ] **Real client test.** Run at least one SMP 2.0 client, for example the BDXR2 client in phoss smp-client, with BDXL discovery. Include the redirect for the ServiceGroup.
-- [ ] **BDXL hash rule.** Confirm the WE BUILD rule of one label over the full identifier (BDXL-02) against what partner clients can configure. Some BDXL clients only offer the Peppol/eDelivery rule with a scheme label.
+- [x] **Real client test.** Run at least one SMP 2.0 client, for example the BDXR2 client in phoss smp-client, with BDXL discovery. Include the redirect for the ServiceGroup. *Done 2026-10-09 with phoss smp-client 13.2.0 (`tests/phoss-client/run.sh`), default settings. It found three problems, now fixed: phoss does not follow redirects (SMP-04), folds `bdx-docid-qns` to lower case (ID-04), and rejects certificates without revocation information (SIG-09).*
+- [ ] **BDXL hash rule.** Confirm the WE BUILD rule of one label over the full identifier (BDXL-02) against what partner clients can configure. Some BDXL clients only offer the Peppol/eDelivery rule with a scheme label. *phoss: supported with `BDXLURLProvider.setAddIdentifierSchemeToZone(false)`. Other partner clients still to check.*
 - [x] **Zone and host names.** Fix `bdxl_zone` and `smp_base_url`, and the Cloudflare account that runs Pages and DNS. *Pilot: `smp.webuild.kjorlaug.no` (Cloudflare Pages) and `bdxl.webuild.kjorlaug.no` (deSEC, because the parent's DNS host, Domeneshop, has no NAPTR).*
 - [ ] **Participant schemes.** Confirm the ICD list for ID-03 against the pilot's participants.
 - [ ] **WE BUILD process and service identifiers.** Agree a URN namespace for SC5 processes and for WE BUILD-specific services, such as attestations.
 - [ ] **Transport profiles and anchors.** Define the AS4 test CA, the wallet anchor, and the WMP profile ID with the WMP authors.
 - [ ] **Identifier length.** Encoded identifiers must fit in 255 bytes as file names. Check this against the longest identifiers the pilot will use.
 - [ ] **Pilot end date.** Set `pilot_end_date` as the upper bound for ExpirationDate (REG-05).
-- [ ] **Key custody.** Decide who holds the offline CA key and who has repository admin rights (SIG-06).
+- [ ] **Key custody.** Decide who holds the offline CA key and who has repository admin rights (SIG-06). The CA key holder also re-signs the CRL yearly (SIG-09).
+- [ ] **WE BUILD trusted list.** Publish the SMP trust anchor through the WE BUILD List of Trusted Lists ([wp4-trust-group](https://github.com/webuild-consortium/wp4-trust-group), ETSI TS 119 602/612) instead of only alongside this spec (SIG-04). WP4 has no SMP/eDelivery service type yet; the CRL (SIG-09) stays, because the trusted list covers the anchor, not individual signing certificates.

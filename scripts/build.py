@@ -109,6 +109,37 @@ def parse_date(v) -> dt.date:
     return dt.date.fromisoformat(str(v)[:10])
 
 
+def check_crl(config, signing_cert_pem: bytes | None = None) -> list[str]:
+    """SIG-09: CRL signed by the trust anchor, not past nextUpdate, signing cert not revoked."""
+    crl_path, ta_path = ROOT / config.get("crl_file", ""), ROOT / config.get("trust_anchor_file", "")
+    if not config.get("crl_file") or not crl_path.is_file():
+        return [f"SIG-09: CRL file {config.get('crl_file')!r} missing"]
+    crl = x509.load_der_x509_crl(crl_path.read_bytes())
+    ta = x509.load_pem_x509_certificate(ta_path.read_bytes())
+    errors = []
+    if not crl.is_signature_valid(ta.public_key()):
+        errors.append(f"SIG-09: {config['crl_file']} is not signed by {config['trust_anchor_file']}")
+    days_left = (crl.next_update_utc - dt.datetime.now(dt.timezone.utc)).days
+    if days_left < 0:
+        errors.append(f"SIG-09: CRL expired {crl.next_update_utc:%Y-%m-%d}; re-sign it (make_test_pki.py --crl-only)")
+    elif days_left < 30:
+        print(f"::warning::CRL nextUpdate {crl.next_update_utc:%Y-%m-%d} is in {days_left} days; "
+              f"re-sign it (make_test_pki.py --crl-only)", file=sys.stderr)
+    if signing_cert_pem:
+        cert = x509.load_pem_x509_certificate(signing_cert_pem)
+        if crl.get_revoked_certificate_by_serial_number(cert.serial_number) is not None:
+            errors.append(f"SIG-09: the signing certificate (serial {cert.serial_number:x}) is revoked")
+        try:
+            dps = cert.extensions.get_extension_for_class(x509.CRLDistributionPoints).value
+            urls = [n.value for dp in dps for n in (dp.full_name or [])]
+        except x509.ExtensionNotFound:
+            urls = []
+        want = f"{config['smp_base_url'].rstrip('/')}/trust/webuild-smp-ca.crl"
+        if want not in urls:
+            errors.append(f"SIG-09: signing certificate has no CRL distribution point {want} (has {urls})")
+    return errors
+
+
 def validate(records, config, schema) -> list[str]:
     errors: list[str] = []
     validator = Draft202012Validator(schema)
@@ -351,12 +382,16 @@ def build_site(records, config, key_pem, cert_pem, out: Path, xsd) -> int:
     (site / ".nojekyll").write_text("")                              # GitHub Pages: no Jekyll
     (site / "_headers").write_text(                                  # Cloudflare Pages / Netlify (SMP-05)
         f"/{RESOURCE_PREFIX}/*\n  Content-Type: application/xml; charset=utf-8\n"
-        f"  Cache-Control: public, max-age=300\n  X-Content-Type-Options: nosniff\n")
+        f"  Cache-Control: public, max-age=300\n  X-Content-Type-Options: nosniff\n"
+        f"/trust/*.crl\n  Content-Type: application/pkix-crl\n  Cache-Control: public, max-age=3600\n")
     write(site / "index.json", json.dumps(index, indent=2).encode())
     write(site / "trust" / "smp-signing-cert.pem", cert_pem)
     ta = ROOT / config.get("trust_anchor_file", "")
     if ta.is_file():
         shutil.copy(ta, site / "trust" / "trust-anchor.pem")
+    crl = ROOT / config.get("crl_file", "")
+    if crl.is_file():
+        shutil.copy(crl, site / "trust" / "webuild-smp-ca.crl")      # SIG-09: CRL distribution point
     return len(index)
 
 
@@ -399,7 +434,7 @@ def main():
     args = ap.parse_args()
 
     config, schema, records = load_config(), load_schema(), load_records()
-    errors = validate(records, config, schema)
+    errors = validate(records, config, schema) + check_crl(config)
     if errors:
         print("Validation failed:", *errors, sep="\n  ", file=sys.stderr)
         sys.exit(1)
@@ -415,6 +450,8 @@ def main():
             sys.exit(f"{args.cert}: no PEM certificate (-----BEGIN CERTIFICATE-----); check SMP_SIGNING_CERT")
         if b"PRIVATE KEY-----" not in key_pem:
             sys.exit(f"{args.key}: no PEM private key (...PRIVATE KEY-----); check SMP_SIGNING_KEY")
+        if crl_errors := check_crl(config, cert_pem):
+            sys.exit("\n".join(crl_errors))
     else:
         ap.error("need --key and --cert, or --ephemeral-key")
 

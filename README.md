@@ -10,6 +10,7 @@ This is the reference implementation of the [WE BUILD SMP/BDXL Conformance Speci
 registry/participants/*.yaml       one file per participant (REG-01)
 registry/certs/                    endpoint certificates (PEM)
 trust/webuild-smp-ca.pem           SMP trust anchor (SIG-04), public
+trust/webuild-smp-ca.crl           CRL for SMP signing certificates (SIG-09), public
 config.yaml                        SMP URL, BDXL zone, mode, allowed schemes and transport profiles
 schema/record.schema.json          record schema (REG-02)
 scripts/build.py                   validate, generate SMP 2.0 XML, sign, BDXL records
@@ -17,7 +18,8 @@ scripts/smoke_test.py              sender-side conformance probe
 scripts/sync_dns_desec.py          pushes NAPTR records to a deSEC zone
 scripts/sync_dns_cloudflare.py     pushes NAPTR records to Cloudflare DNS
 scripts/wait_dns.py                waits until the BDXL zone's nameservers serve the records
-scripts/make_test_pki.py           test CA and SMP signing certificate
+scripts/make_test_pki.py           test CA, SMP signing certificate and CRL
+tests/phoss-client/                real SMP 2.0 client test (phoss smp-client, Docker)
 .github/workflows/publish.yml      the pipeline
 ```
 
@@ -47,13 +49,16 @@ GitHub Pages also works (repository variable `HOSTING=github`). In that case the
 | SMP | `https://smp.webuild.kjorlaug.no`: Cloudflare Pages project `webuild-smp`, CNAME at Domeneshop |
 | BDXL zone | `bdxl.webuild.kjorlaug.no`: deSEC, delegated with NS and DS records at Domeneshop (DNSSEC-signed) |
 | Trust anchor | `trust/webuild-smp-ca.pem`, test CA from `make_test_pki.py` (2026-10-09) |
+| CRL | `https://smp.webuild.kjorlaug.no/trust/webuild-smp-ca.crl`, next update 2027-10-09 |
 
 ## Setting up (operator)
 
 1. Create the PKI: `python scripts/make_test_pki.py --out ../webuild-smp-pki`
-   - Commit only `ca.cert.pem`, as `trust/webuild-smp-ca.pem`.
+   - Commit only `ca.cert.pem`, as `trust/webuild-smp-ca.pem`, and `ca.crl`, as `trust/webuild-smp-ca.crl`.
    - Store `smp.key.pem` and `smp.cert.pem` as secrets `SMP_SIGNING_KEY` and `SMP_SIGNING_CERT`. The build fails fast if either is empty or not PEM.
    - Keep `ca.key.pem` offline.
+   - Re-sign the CRL before its `nextUpdate` (yearly; CI warns 30 days ahead), and add `--revoke <serial>` when retiring a signing cert:
+     `python scripts/make_test_pki.py --out ../webuild-smp-pki --ca-key ../webuild-smp-pki/ca.key.pem --ca-cert ../webuild-smp-pki/ca.cert.pem --crl-only`
 2. Cloudflare Pages:
    - Add the secrets `CLOUDFLARE_API_TOKEN` (Pages:Edit) and `CLOUDFLARE_ACCOUNT_ID`, and the variable `CF_PAGES_PROJECT`. The first deploy creates the project.
    - Then add the host of `smp_base_url` as the project's custom domain, with a CNAME to `<project>.pages.dev` at your DNS host.
@@ -88,11 +93,11 @@ Results so far:
 
 - On live Cloudflare Pages (2026-10-09), all 12 checks pass, including BDXL, with only the decoded layout deployed. `path_layouts` is now `[decoded]`.
 
-Still to do: run one real SMP 2.0 client (e.g. the BDXR2 client in phoss smp-client), configured with the WE BUILD BDXL zone and trust anchor (SPEC section 12).
+- phoss smp-client 13.2.0 (`tests/phoss-client/run.sh`, needs Docker) passes with default settings. It needed three changes: the ServiceGroup is served without a redirect, service IDs are also served lower-cased, and the signing cert has a CRL.
 
 ## Known limitations of static hosting
 
-- The ServiceGroup is stored as `/{participant}/index.html` and reached through a 308 redirect (SMP-04).
+- The ServiceGroup is stored as `{participant}.html`, which Cloudflare Pages serves at `/{participant}` without a redirect (SMP-04). Hosts without that mapping would answer with a redirect, which phoss rejects.
 - The encoded service or participant identifier must be 255 bytes or less, because it becomes a file name. `build.py` rejects longer ones.
 - Lookups are case-sensitive, so participant identifiers are forced to lower case (ID-01).
 - The signing key is a CI secret. Anyone with admin rights on the repository can reach it indirectly (SIG-06).
