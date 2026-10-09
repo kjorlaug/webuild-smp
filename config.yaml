@@ -5,9 +5,9 @@ bdxl_mode: explicit                               # BDXL-05: explicit | wildcard
 dns_ttl: 3600                                     # BDXL-06
 pilot_end_date: 2027-12-31                        # PLACEHOLDER: REG-05 upper bound for ExpirationDate
 trust_anchor_file: trust/webuild-smp-ca.pem       # SIG-04: published at /trust/trust-anchor.pem
-# On-disk path layouts. Keep both until smoke_test.py against the live host shows
-# which one it serves, then drop the other (README, "The spike").
-path_layouts: [decoded, encoded]
+# On-disk path layouts. Cloudflare Pages decodes the request path before lookup, so
+# decoded file names serve both encodings (live-host check, SPEC section 12).
+path_layouts: [decoded]
 participant_schemes:                              # ID-03
   - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0192
   - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0088
