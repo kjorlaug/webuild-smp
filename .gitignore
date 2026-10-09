@@ -3,3 +3,4 @@ __pycache__/
 *.key.pem
 .venv/
 xsd/
+tests/phoss-client/target/
