@@ -248,7 +248,7 @@ The operator publishes the test participant and the expected results.
 
 ## 12. Open issues
 
-- [ ] **Live host check.** Confirm on real Cloudflare Pages what the emulator showed: decoded file names, `_headers` applied, 308 for the ServiceGroup. Then set `path_layouts: [decoded]`.
+- [x] **Live host check.** Confirm on real Cloudflare Pages what the emulator showed: decoded file names, `_headers` applied, 308 for the ServiceGroup. Then set `path_layouts: [decoded]`. *Done 2026-10-09 on smp.webuild.kjorlaug.no: decoded-only layout serves both encodings, `_headers` applied, ServiceGroup 200 via 308; smoke_test.py 10/10 (`--no-dns`).*
 - [ ] **Real client test.** Run at least one SMP 2.0 client, for example the BDXR2 client in phoss smp-client, with BDXL discovery. Include the redirect for the ServiceGroup.
 - [ ] **BDXL hash rule.** Confirm the WE BUILD rule of one label over the full identifier (BDXL-02) against what partner clients can configure. Some BDXL clients only offer the Peppol/eDelivery rule with a scheme label.
 - [ ] **Zone and host names.** Fix `bdxl_zone` and `smp_base_url`, and the Cloudflare account that runs Pages and DNS.
