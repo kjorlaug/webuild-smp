@@ -74,8 +74,10 @@ jobs:
           printf '%s\n' "$SMP_SIGNING_CERT" > "$RUNNER_TEMP/smp.cert.pem"
           python scripts/build.py --key "$RUNNER_TEMP/smp.key.pem" --cert "$RUNNER_TEMP/smp.cert.pem" --xsd-dir xsd
           rm -f "$RUNNER_TEMP/smp.key.pem"
+      # upload-artifact rejects ':' in file names (decoded path layout), so ship the site as a tarball
+      - run: tar -C dist -cf dist/site.tar site
       - uses: actions/upload-artifact@v4
-        with: { name: site, path: dist/site, include-hidden-files: true }
+        with: { name: site, path: dist/site.tar }
       - uses: actions/upload-artifact@v4
         with: { name: dns, path: dist/dns }
       - if: vars.HOSTING == 'github'
@@ -89,7 +91,8 @@ jobs:
     permissions: { contents: read, deployments: write }
     steps:
       - uses: actions/download-artifact@v4
-        with: { name: site, path: site }
+        with: { name: site, path: . }
+      - run: tar -xf site.tar && rm site.tar
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
