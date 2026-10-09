@@ -5,7 +5,8 @@
 #   Secrets:
 #     SMP_SIGNING_KEY, SMP_SIGNING_CERT          (SIG-06; from scripts/make_test_pki.py)
 #     CLOUDFLARE_API_TOKEN                        (Pages:Edit + Zone.DNS:Edit)
-#     CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID
+#     CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID   (ZONE_ID only if the BDXL zone is on Cloudflare)
+#     DESEC_TOKEN                                 (BDXL zone on deSEC; takes precedence over Cloudflare DNS)
 #   Variables:
 #     HOSTING = cloudflare (default) | github
 #       cloudflare: Cloudflare Pages honours _headers -> Content-Type application/xml (SMP-05)
@@ -128,11 +129,15 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          DESEC_TOKEN: ${{ secrets.DESEC_TOKEN }}
         run: |
-          if [ -z "$CLOUDFLARE_ZONE_ID" ]; then
-            echo "No DNS credentials; load dist/dns/naptr.zone into the BDXL zone manually."; exit 0
+          if [ -n "$DESEC_TOKEN" ]; then
+            python scripts/sync_dns_desec.py
+          elif [ -n "$CLOUDFLARE_ZONE_ID" ]; then
+            python scripts/sync_dns_cloudflare.py
+          else
+            echo "No DNS credentials; load dist/dns/naptr.zone into the BDXL zone manually."
           fi
-          python scripts/sync_dns_cloudflare.py
 
   smoke:
     needs: dns
