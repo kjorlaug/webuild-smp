@@ -1,0 +1,30 @@
+# One file per participant (REG-01). The file name is free; the identifier below is authoritative.
+participant:
+  scheme: urn:oasis:names:tc:ebcore:partyid-type:iso6523:0192   # lower case (ID-01)
+  value: "991825827"
+  name: Example Buyer AS            # informational, not published
+  registrant: Example AP Provider   # informational, not published
+services:
+  - service:
+      scheme: bdx-docid-qns
+      value: "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2::Invoice##urn:cen.eu:en16931:2017::2.1"
+    processMetadata:
+      - process:
+          value: "urn:webuild:sc5:einvoicing:1.0"     # PLACEHOLDER: WE BUILD process ID (open issue)
+        endpoints:
+          - transportProfile: bdxr-transport-ebms3-as4-v1p0
+            address: https://ap.example.com/as4
+            description: Example AS4 access point (WE BUILD test)
+            contact: mailto:ops@ap.example.com
+            activationDate: "2026-10-01"
+            expirationDate: "2027-12-31"
+            certificates:
+              - certificate: ../certs/example-ap.pem
+                typeCode: signing-and-encryption
+          - transportProfile: webuild-transport-wmp-v1
+            address: https://wallet.example.com/wmp/inbox
+            description: Example business wallet inbox
+            contact: mailto:ops@wallet.example.com
+            expirationDate: "2027-12-31"
+            certificates:
+              - certificate: ../certs/example-ap.pem

@@ -1,0 +1,141 @@
+# WE BUILD SMP 2.0 / BDXL: validate on PR; build, sign, publish, sync DNS and probe on main.
+#
+# Repository settings:
+#   Branch protection on main: require PR, 1 approval not by the author (REG-03), status check "validate"
+#   Secrets:
+#     SMP_SIGNING_KEY, SMP_SIGNING_CERT          (SIG-06; from scripts/make_test_pki.py)
+#     CLOUDFLARE_API_TOKEN                        (Pages:Edit + Zone.DNS:Edit)
+#     CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID
+#   Variables:
+#     HOSTING = cloudflare (default) | github
+#       cloudflare: Cloudflare Pages honours _headers -> Content-Type application/xml (SMP-05)
+#       github:     GitHub Pages cannot set Content-Type; smoke test will report SMP-05 failures
+#     CF_PAGES_PROJECT = name of the Cloudflare Pages project (custom domain = smp_base_url host)
+
+name: publish
+
+on:
+  pull_request:
+    paths: ["registry/**", "config.yaml", "schema/**", "scripts/**", "trust/**", ".github/workflows/**"]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"      # weekly rebuild: catches expired certificates and dates (REG-05)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SMP_XSD_URL: https://docs.oasis-open.org/bdxr/bdx-smp/v2.0/os/xsd/
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: Fetch OASIS SMP 2.0 schemas
+        run: wget -q -r -np -nH --cut-dirs=5 -R "index.html*" -P xsd "$SMP_XSD_URL" && find xsd -name '*.xsd' | head
+      - name: Validate records (REG-02)
+        run: python scripts/build.py --validate-only
+      - name: Trial build, throwaway key, XSD validation (no secrets on PRs)
+        run: python scripts/build.py --ephemeral-key --xsd-dir xsd
+      - name: Show BDXL records
+        run: cat dist/dns/naptr.zone
+
+  build:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: Fetch OASIS SMP 2.0 schemas
+        run: wget -q -r -np -nH --cut-dirs=5 -R "index.html*" -P xsd "$SMP_XSD_URL"
+      - name: Build, sign, XSD-validate
+        env:
+          SMP_SIGNING_KEY: ${{ secrets.SMP_SIGNING_KEY }}
+          SMP_SIGNING_CERT: ${{ secrets.SMP_SIGNING_CERT }}
+        run: |
+          umask 077
+          printf '%s\n' "$SMP_SIGNING_KEY"  > "$RUNNER_TEMP/smp.key.pem"
+          printf '%s\n' "$SMP_SIGNING_CERT" > "$RUNNER_TEMP/smp.cert.pem"
+          python scripts/build.py --key "$RUNNER_TEMP/smp.key.pem" --cert "$RUNNER_TEMP/smp.cert.pem" --xsd-dir xsd
+          rm -f "$RUNNER_TEMP/smp.key.pem"
+      - uses: actions/upload-artifact@v4
+        with: { name: site, path: dist/site, include-hidden-files: true }
+      - uses: actions/upload-artifact@v4
+        with: { name: dns, path: dist/dns }
+      - if: vars.HOSTING == 'github'
+        uses: actions/upload-pages-artifact@v3
+        with: { path: dist/site }
+
+  deploy-cloudflare:
+    if: vars.HOSTING != 'github'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: { contents: read, deployments: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: site, path: site }
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
+
+  deploy-github:
+    if: vars.HOSTING == 'github'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: { pages: write, id-token: write }
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  dns:
+    needs: [deploy-cloudflare, deploy-github]
+    if: always() && !failure() && !cancelled() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with: { name: dns, path: dist/dns }
+      - name: Sync BDXL NAPTR records
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_ZONE_ID" ]; then
+            echo "No DNS credentials; load dist/dns/naptr.zone into the BDXL zone manually."; exit 0
+          fi
+          python scripts/sync_dns_cloudflare.py
+
+  smoke:
+    needs: dns
+    if: always() && needs.dns.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: Conformance probe against the live service
+        run: |
+          sleep 60   # CDN propagation
+          python scripts/smoke_test.py

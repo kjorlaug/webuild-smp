@@ -1,0 +1,7 @@
+lxml>=5
+signxml>=4
+cryptography>=42
+pyyaml>=6
+jsonschema>=4.20
+dnspython>=2.6
+requests>=2.31
