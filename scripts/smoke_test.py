@@ -34,6 +34,7 @@ from signxml import XMLVerifier
 ROOT = Path(__file__).resolve().parent.parent
 PREFIX = "bdxr-smp-2"
 NS = {"smb": "http://docs.oasis-open.org/bdxr/ns/SMP/2/BasicComponents"}
+NS_EXT = "http://docs.oasis-open.org/bdxr/ns/SMP/2/ExtensionComponents"
 results: list[tuple[str, bool]] = []
 
 
@@ -78,6 +79,21 @@ def verify(xml: bytes, ca: Path) -> tuple[bool, str]:
         return False, f"{ex.__class__.__name__}: {ex}"
 
 
+def check_erds(doc):
+    """ERDS-02: every ERDSMetadata extension is identified as ETSI specifies and valid against the ETSI XSD."""
+    exts = [e for e in doc.iter(f"{{{NS_EXT}}}SMPExtension")
+            if e.findtext("smb:ID", namespaces=NS) == "ERDSMetadata"]
+    if not exts:
+        return
+    xsd = etree.XMLSchema(etree.parse(str(ROOT / "schema" / "etsi" / "ERDS19522v111-201902v0.0.5.xsd")))
+    for e in exts:
+        md = e.find(f"{{{NS_EXT}}}ExtensionContent/{{http://uri.etsi.org/19522/v1#}}ERDSMetadata")
+        ok = (md is not None and xsd.validate(md)
+              and e.findtext(f"{{{NS_EXT}}}ExtensionURI") == "http://uri.etsi.org/19522/v1#ERDSMetadata")
+        check("ERDSMetadata extension (ERDS-02)", ok,
+              md.findtext("ERDSDomain") if ok else (str(xsd.error_log.last_error) if md is not None else "missing"))
+
+
 def probe(smp: str, participant: str, service: str, ca: Path):
     variants = {"full-encoded (ID-05)": (quote(participant, safe=""), quote(service, safe="")),
                 "':' unencoded (ID-06)": (quote(participant, safe=":"), quote(service, safe=":")),
@@ -101,6 +117,7 @@ def probe(smp: str, participant: str, service: str, ca: Path):
         check("ParticipantID matches", got.lower() == participant.lower(), got)
         check("SMPVersionID 2.0", doc.findtext("smb:SMPVersionID", namespaces=NS) == "2.0")
         check("ServiceMetadata signature (SIG)", *verify(body, ca))
+        check_erds(doc)
 
     url = f"{smp}/{PREFIX}/{quote(participant, safe='')}"
     try:

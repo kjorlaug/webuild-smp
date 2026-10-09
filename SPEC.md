@@ -13,6 +13,7 @@ This specification defines how WE BUILD participants publish and look up deliver
 - Identifier schemes, normalisation and URL encoding
 - Metadata signing and trust anchors
 - Transport profiles, for AS4 and wallet endpoints
+- ERDS capability metadata for (Q)ERDS endpoints, as ETSI EN 319 522 defines it
 - The registration procedure for adding or changing entries
 
 **Out of scope:**
@@ -36,6 +37,8 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are to be read as descr
 | [RFC4648] | The Base16, Base32 and Base64 Data Encodings | Base32 hash encoding |
 | [RFC3986] | Uniform Resource Identifier (URI): Generic Syntax | Percent-encoding |
 | [XMLDSIG] | XML Signature Syntax and Processing 1.1 | Signed metadata |
+| [ERDS3] | ETSI EN 319 522-3 V1.1.1 (2018-09), Electronic Registered Delivery Services; Part 3: Formats | `ERDSMetadata` (clause 6.3.2) and its XML schema |
+| [ERDS43] | ETSI EN 319 522-4-3 V1.1.1 (2018-09), ERDS; Part 4: Bindings; Sub-part 3: Capability/requirements bindings | BDXL and SMP binding for ERDS metadata |
 
 [SMP2] allows unsigned metadata and optional BDXL, and [BDXL] leaves the construction of hostnames to each network. This spec is a WE BUILD profile that makes those choices; see sections 5 and 7.
 
@@ -160,6 +163,15 @@ An endpoint's `TransportProfileID` says how to reach it. AS4 and wallet endpoint
 - **TP-02** One `ProcessMetadata` MAY list several endpoints with different profiles. The sender picks one it supports.
 - **TP-03** Senders MUST ignore endpoints whose profile they do not support. They MUST NOT fail the lookup because of them.
 
+### 8.1 ERDS capability metadata
+
+[ERDS43] binds (Q)ERDS capability discovery to BDXL and SMP: the recipient's ServiceMetadata carries, as an SMP extension, the [ERDS3] `ERDSMetadata` of the ERDS behind each endpoint. A sending ERDS reads it to decide whether it can relay to that ERDS: profile, qualified status, trust domain, assurance level, consignment mode, and expiry and scheduled-delivery support. [ERDS43] was written for SMP 1.0; this section maps it to [SMP2].
+
+- **ERDS-01** ERDS capability metadata is registered once per ERDS, as a record under `registry/erds/`, and is common to all of that ERDS's endpoints, as [ERDS43] clause 6 says. An endpoint names its ERDS by that record; participant records do not repeat the metadata.
+- **ERDS-02** For an endpoint that names an ERDS, the SMP MUST publish `Endpoint/ext:SMPExtensions/ext:SMPExtension` with `smb:ID` `ERDSMetadata`, `ext:Name` `ERDSMetadata`, `ext:ExtensionAgencyID` `ETSI`, `ext:ExtensionAgencyName` `European Telecommunications Standards Institute`, `ext:ExtensionVersionID` `EN319522v1.1.1`, `ext:ExtensionAgencyURI` `http://www.etsi.org`, `ext:ExtensionURI` `http://uri.etsi.org/19522/v1#ERDSMetadata`, `ext:ExtensionReasonCode` `ERDSMetadata` and `ext:ExtensionReason` `Publish capability metadata for an Electronic Registered Delivery Service`. These are the [ERDS3] clause 6.3.2 values under their [SMP2] element names. `ext:ExtensionContent` holds one `erds:ERDSMetadata` (namespace `http://uri.etsi.org/19522/v1#`, `version="EN319522v1.1.1"`) that MUST validate against the [ERDS3] schema. In that schema only the root element is namespace-qualified.
+- **ERDS-03** `ERDSProfileSupported` MUST be one of the WE BUILD ERDS profile URIs. [ERDS3] defines no profile identifiers, so WE BUILD keeps the list (`erds_profiles` in the reference implementation). The pilot value `urn:webuild:erds:profile:etsi-en-319-522-4-1-as4` (ETSI AS4 binding) is a placeholder; see section 12.
+- **ERDS-04** The extension is on the `Endpoint`, not on `ProcessMetadata`, because one ServiceMetadata can mix ERDS and non-ERDS endpoints (TP-02). [ERDS43] allows either level. Senders that do not use ERDS metadata MUST ignore the extension, as [SMP2] allows.
+
 ## 9. Registration and change procedure
 
 A pull request to the registry repository is how a registration is requested, and merging it is the approval. The git history is the audit log.
@@ -212,6 +224,8 @@ A sender or operator conforms if it meets every MUST in its column.
 | SIG-08 | KeyUsage on signing cert and anchor | MUST | | |
 | SIG-09 | CRL distribution point, current CRL, retired certs listed | MUST | | SHOULD check |
 | TP-01–03 | Listed profiles only, ignore unsupported | check | MUST | MUST |
+| ERDS-01–03 | ERDS metadata as ETSI SMP extension, XSD-valid, listed profile | MUST | MUST (ERDS endpoints) | |
+| ERDS-04 | Extension on Endpoint; ignore if unused | MUST | | MUST |
 | REG-01–06 | PR-based registration, review, expiry | MUST | MUST | |
 
 "check" means the operator's CI enforces the requirement on the registrant's behalf.
@@ -222,7 +236,7 @@ The reference implementation is this repository; its YAML records are the regist
 
 | Pipeline job | Runs on | Does | Spec |
 | --- | --- | --- | --- |
-| validate | every PR | Schema, lower-case IDs, allowed schemes and profiles, cert parse, dates, file-name length; trial build with a throwaway key; OASIS XSD validation | REG-02, ID-01, ID-03, TP-01, REG-05, SMP-02 |
+| validate | every PR | Schema, lower-case IDs, allowed schemes and profiles, cert parse, dates, file-name length; ERDS records against the ETSI XSD; trial build with a throwaway key; OASIS XSD validation | REG-02, ID-01, ID-03, TP-01, ERDS-01–03, REG-05, SMP-02 |
 | build | merge to `main`, weekly | Generates and signs ServiceGroup and ServiceMetadata, validates against the XSDs, verifies its own signatures; refuses a revoked signing cert or an expired CRL, and warns 30 days before `nextUpdate` | SMP-02, SIG-01–03, SIG-09 |
 | deploy | after build | Publishes the site, with a `_headers` file that sets `application/xml` | SMP-01, SMP-05 |
 | dns | after deploy | Syncs U-NAPTR records to the BDXL zone, then waits until its authoritative servers serve them | BDXL-03, BDXL-05, REG-04 |
@@ -256,6 +270,7 @@ The operator publishes the test participant and the expected results.
 - [x] **Real client test.** Run at least one SMP 2.0 client, for example the BDXR2 client in phoss smp-client, with BDXL discovery. Include the redirect for the ServiceGroup. *Done 2026-10-09 with phoss smp-client 13.2.0 (`tests/phoss-client/run.sh`), default settings. It found three problems, now fixed: phoss does not follow redirects (SMP-04), folds `bdx-docid-qns` to lower case (ID-04), and rejects certificates without revocation information (SIG-09).*
 - [ ] **BDXL hash rule.** Confirm the WE BUILD rule of one label over the full identifier (BDXL-02) against what partner clients can configure. Some BDXL clients only offer the Peppol/eDelivery rule with a scheme label. *phoss: supported with `BDXLURLProvider.setAddIdentifierSchemeToZone(false)`. Other partner clients still to check.*
 - [x] **Zone and host names.** Fix `bdxl_zone` and `smp_base_url`, and the Cloudflare account that runs Pages and DNS. *Pilot: `smp.webuild.kjorlaug.no` (Cloudflare Pages) and `bdxl.webuild.kjorlaug.no` (deSEC, because the parent's DNS host, Domeneshop, has no NAPTR).*
+- [ ] **ERDS profile identifiers.** Agree the `ERDSProfileSupported` URIs (ERDS-03) with the WP4-QTSP group, for example one each for the ETSI AS4 binding (EN 319 522-4-1), REM (EN 319 532) and the EUBW secure channel. Also confirm that per-endpoint ERDS metadata (ERDS-04) meets what QERDS providers need for relaying decisions.
 - [ ] **Participant schemes.** Confirm the ICD list for ID-03 against the pilot's participants.
 - [ ] **WE BUILD process and service identifiers.** Agree a URN namespace for SC5 processes and for WE BUILD-specific services, such as attestations.
 - [ ] **Transport profiles and anchors.** Define the AS4 test CA, the wallet anchor, and the WMP profile ID with the WMP authors.

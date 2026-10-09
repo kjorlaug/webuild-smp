@@ -14,6 +14,7 @@ services:
         endpoints:
           - transportProfile: bdxr-transport-ebms3-as4-v1p0
             address: https://ap.example.com/as4
+            erds: example-qerds                     # ERDS capability metadata (registry/erds/)
             description: Example AS4 access point (WE BUILD test)
             contact: mailto:ops@ap.example.com
             activationDate: "2026-10-01"

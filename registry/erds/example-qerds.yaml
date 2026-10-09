@@ -1,0 +1,17 @@
+# ERDS capability metadata (ERDS-01; ETSI EN 319 522-3 clause 6.3.2). One file per ERDS.
+# Endpoints that belong to this ERDS reference it as `erds: example-qerds`.
+name: Example QERDS (WE BUILD test)          # informational, not published
+registrant: Example AP Provider              # informational, not published
+erdsId:
+  scheme: urn:oasis:names:tc:ebcore:partyid-type:iso6523:0192
+  value: "991825827"
+domain: erds.example.com
+governingBody: Example AP Provider AS
+profileSupported: urn:webuild:erds:profile:etsi-en-319-522-4-1-as4   # PLACEHOLDER (ERDS-03, open issue)
+metadataRepository: https://smp.webuild.kjorlaug.no
+euQualified: false
+expiryDateAndTimeSupport: true
+scheduledDeliverySupport: false
+assuranceLevel:
+  level: http://eidas.europa.eu/LoA/substantial
+consignmentMode: basic

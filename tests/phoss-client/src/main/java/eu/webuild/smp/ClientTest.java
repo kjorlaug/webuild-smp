@@ -79,8 +79,21 @@ public final class ClientTest {
     if (sm != null) {
       for (final ProcessMetadataType pm : sm.getProcessMetadata())
         for (final EndpointType ep : pm.getEndpoint())
+        {
           check("Endpoint", ep.getAddressURIValue() != null,
                 ep.getTransportProfileIDValue() + " -> " + ep.getAddressURIValue());
+          // ERDS-02: ETSI EN 319 522-3 ERDSMetadata as SMP 2.0 extension, as a sending ERDS reads it
+          if (ep.getSMPExtensions() != null)
+            for (final var ext : ep.getSMPExtensions().getSMPExtension())
+              if ("ERDSMetadata".equals(ext.getIDValue())) {
+                final org.w3c.dom.Element md = (org.w3c.dom.Element) ext.getExtensionContent().getAny();
+                final boolean ok = md != null && "http://uri.etsi.org/19522/v1#".equals(md.getNamespaceURI()) &&
+                                   "ERDSMetadata".equals(md.getLocalName());
+                check("  ERDSMetadata extension", ok, ok ? "domain " +
+                      md.getElementsByTagName("ERDSDomain").item(0).getTextContent() + ", profile " +
+                      md.getElementsByTagName("ERDSProfileSupported").item(0).getTextContent() : null);
+              }
+        }
     }
 
     final IParticipantIdentifier unknown = idf.createParticipantIdentifier(pid.getScheme(), "000000000");

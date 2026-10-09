@@ -44,6 +44,19 @@ NS_SM = "http://docs.oasis-open.org/bdxr/ns/SMP/2/ServiceMetadata"
 NS_SMB = "http://docs.oasis-open.org/bdxr/ns/SMP/2/BasicComponents"
 NS_SMA = "http://docs.oasis-open.org/bdxr/ns/SMP/2/AggregateComponents"
 NS_EXT = "http://docs.oasis-open.org/bdxr/ns/SMP/2/ExtensionComponents"
+NS_ERDS = "http://uri.etsi.org/19522/v1#"                          # ETSI EN 319 522-3
+ERDS_VERSION = "EN319522v1.1.1"
+ERDS_XSD = ROOT / "schema" / "etsi" / "ERDS19522v111-201902v0.0.5.xsd"
+# ERDS-02: extension identification fixed by ETSI EN 319 522-3 clause 6.3.2, mapped to SMP 2.0 SMPExtension
+ERDS_EXTENSION = [("ID", NS_SMB, "ERDSMetadata"),
+                  ("Name", NS_EXT, "ERDSMetadata"),
+                  ("ExtensionAgencyID", NS_EXT, "ETSI"),
+                  ("ExtensionAgencyName", NS_EXT, "European Telecommunications Standards Institute"),
+                  ("ExtensionVersionID", NS_EXT, ERDS_VERSION),
+                  ("ExtensionAgencyURI", NS_EXT, "http://www.etsi.org"),
+                  ("ExtensionURI", NS_EXT, "http://uri.etsi.org/19522/v1#ERDSMetadata"),
+                  ("ExtensionReasonCode", NS_EXT, "ERDSMetadata"),
+                  ("ExtensionReason", NS_EXT, "Publish capability metadata for an Electronic Registered Delivery Service")]
 SMP_VERSION = "2.0"
 
 
@@ -88,6 +101,12 @@ def load_schema() -> dict:
 def load_records() -> list[tuple[Path, dict]]:
     return [(p, yaml.safe_load(p.read_text(encoding="utf-8")))
             for p in sorted((ROOT / "registry" / "participants").rglob("*.y*ml"))]
+
+
+def load_erds() -> dict[str, tuple[Path, dict]]:
+    """ERDS capability metadata records, keyed by file name without extension (ERDS-01)."""
+    return {p.stem: (p, yaml.safe_load(p.read_text(encoding="utf-8")))
+            for p in sorted((ROOT / "registry" / "erds").glob("*.y*ml"))}
 
 
 def load_cert(ref: str, record_path: Path):
@@ -140,7 +159,27 @@ def check_crl(config, signing_cert_pem: bytes | None = None) -> list[str]:
     return errors
 
 
-def validate(records, config, schema) -> list[str]:
+def validate_erds(erds, config) -> list[str]:
+    """ERDS-01..03: record schema, allowed profile, ETSI XSD validity of the generated ERDSMetadata."""
+    errors = []
+    validator = Draft202012Validator(json.loads((ROOT / "schema" / "erds.schema.json").read_text()))
+    xsd = etree.XMLSchema(etree.parse(str(ERDS_XSD)))
+    for name, (path, rec) in erds.items():
+        where = path.relative_to(ROOT)
+        schema_errors = [f"{where}: schema: {'/'.join(map(str, e.path))} {e.message}"
+                         for e in validator.iter_errors(rec)]
+        if schema_errors:
+            errors += schema_errors
+            continue
+        if rec["profileSupported"] not in config.get("erds_profiles", []):
+            errors.append(f"{where}: ERDS profile {rec['profileSupported']} not allowed (ERDS-03)")
+        el = erds_metadata(rec)
+        if not xsd.validate(el):
+            errors.append(f"{where}: ERDSMetadata not valid against ETSI XSD: {xsd.error_log.last_error}")
+    return errors
+
+
+def validate(records, config, schema, erds=None) -> list[str]:
     errors: list[str] = []
     validator = Draft202012Validator(schema)
     profiles = set(config["transport_profiles"])
@@ -183,6 +222,9 @@ def validate(records, config, schema) -> list[str]:
                 for ep in pm["endpoints"]:
                     if ep["transportProfile"] not in profiles:                      # TP-01
                         errors.append(f"{where}: unknown transport profile {ep['transportProfile']} (TP-01)")
+                    if ep.get("erds") and ep["erds"] not in (erds or {}):           # ERDS-01
+                        errors.append(f"{where}: endpoint references unknown ERDS '{ep['erds']}' "
+                                      f"(no registry/erds/{ep['erds']}.yaml)")
                     for c in ep.get("certificates", []):
                         try:
                             _, cert = load_cert(c["certificate"], path)
@@ -245,7 +287,56 @@ def service_group(rec):
     return sg
 
 
-def service_metadata(rec, service, record_path: Path):
+def erds_metadata(rec):
+    """ETSI EN 319 522-3 ERDSMetadata (clause 6.3.2) from an ERDS record; element order per the XSD."""
+    # The ETSI XSD has no elementFormDefault: only the root is namespace-qualified, children are not.
+    m = etree.Element(f"{{{NS_ERDS}}}ERDSMetadata", nsmap={"erds": NS_ERDS}, version=ERDS_VERSION)
+
+    def sub(parent, _ns, tag, text=None, **attrs):
+        el = etree.SubElement(parent, tag, **attrs)
+        if text is not None:
+            el.text = text
+        return el
+
+    sub(m, NS_ERDS, "ERDSId", rec["erdsId"]["value"], IdentifierSchemeName=rec["erdsId"]["scheme"])
+    sub(m, NS_ERDS, "ERDSDomain", rec["domain"])
+    sub(m, NS_ERDS, "ERDSGoverningBody", rec["governingBody"])
+    sub(m, NS_ERDS, "ERDSProfileSupported", rec["profileSupported"])
+    if "metadataRepository" in rec:
+        sub(m, NS_ERDS, "ERDSMetadataRepository", rec["metadataRepository"])
+    if "euQualified" in rec:
+        sub(m, NS_ERDS, "ERDSEUQualifiedIndicator", str(rec["euQualified"]).lower())
+    if "tslLocation" in rec:
+        sub(m, NS_ERDS, "ERDSTLSLocation", rec["tslLocation"])
+    if "rootCACertLocation" in rec:
+        sub(m, NS_ERDS, "ERDSRootCACertLocation", rec["rootCACertLocation"])
+    sub(m, NS_ERDS, "ERDSExpiryDateAndTimeSupport", str(rec["expiryDateAndTimeSupport"]).lower())
+    sub(m, NS_ERDS, "ERDSScheduledDeliverySupport", str(rec["scheduledDeliverySupport"]).lower())
+    if al := rec.get("assuranceLevel"):
+        a = sub(m, NS_ERDS, "ERDSAssuranceLevelsSupported")
+        sub(a, NS_ERDS, "AssuranceLevel", al["level"])
+        if "policyId" in al:
+            sub(a, NS_ERDS, "PolicyID", al["policyId"])
+        if "policyIdDetails" in al:
+            sub(a, NS_ERDS, "PolicyIDDetails", al["policyIdDetails"])
+    if pols := rec.get("policies"):
+        ps = sub(m, NS_ERDS, "ERDSPolicySupport")
+        for pid in pols:
+            sub(ps, NS_ERDS, "PolicyID", pid)
+    if mode := rec.get("consignmentMode"):
+        sub(m, NS_ERDS, "ERDSSupportedConsignmentModes", f"http://uri.etsi.org/19522/v1#/consignment/{mode}")
+    return m
+
+
+def erds_extension(parent, rec):
+    """SMP 2.0 SMPExtension carrying ERDSMetadata (ERDS-02; EN 319 522-4-3 clause 6)."""
+    ext = sub(sub(parent, NS_EXT, "SMPExtensions"), NS_EXT, "SMPExtension")
+    for tag, ns, value in ERDS_EXTENSION:
+        sub(ext, ns, tag, value)
+    sub(ext, NS_EXT, "ExtensionContent").append(erds_metadata(rec))
+
+
+def service_metadata(rec, service, record_path: Path, erds=None):
     p = norm_participant(rec["participant"])
     sm = root_el(NS_SM, "ServiceMetadata")
     sub(sm, NS_SMB, "SMPVersionID", SMP_VERSION)
@@ -257,6 +348,8 @@ def service_metadata(rec, service, record_path: Path):
             process_el(pme, pm["process"])
         for ep in pm["endpoints"]:                                  # SMP-08: never Redirect
             e = sub(pme, NS_SMA, "Endpoint")
+            if ep.get("erds"):                                      # ERDS-02: first child of Endpoint
+                erds_extension(e, erds[ep["erds"]][1])
             sub(e, NS_SMB, "TransportProfileID", ep["transportProfile"])
             if ep.get("description"):
                 sub(e, NS_SMB, "Description", ep["description"])
@@ -339,7 +432,7 @@ def xsd_validator(xsd_dir: Path | None):
             "ServiceMetadata": etree.XMLSchema(etree.parse(str(xsd_dir / "ServiceMetadata-2.0.xsd")))}
 
 
-def build_site(records, config, key_pem, cert_pem, out: Path, xsd) -> int:
+def build_site(records, config, key_pem, cert_pem, out: Path, xsd, erds=None) -> int:
     site = out / "site"
     if site.exists():
         shutil.rmtree(site)
@@ -366,7 +459,7 @@ def build_site(records, config, key_pem, cert_pem, out: Path, xsd) -> int:
             write(site / RESOURCE_PREFIX / f"{pdir}.html", sg)
             write(site / RESOURCE_PREFIX / pdir / "index.html", sg)
         for s in rec["services"]:
-            data = emit(service_metadata(rec, s, path), "ServiceMetadata")
+            data = emit(service_metadata(rec, s, path, erds), "ServiceMetadata")
             # SMP 2.0 identifiers are case-insensitive unless their scheme says otherwise, and
             # clients fold them to lower case (phoss does for bdx-docid-qns). A static host cannot
             # fold, so also store the lower-cased name (ID-04).
@@ -433,12 +526,12 @@ def main():
     ap.add_argument("--out", type=Path, default=ROOT / "dist")
     args = ap.parse_args()
 
-    config, schema, records = load_config(), load_schema(), load_records()
-    errors = validate(records, config, schema) + check_crl(config)
+    config, schema, records, erds = load_config(), load_schema(), load_records(), load_erds()
+    errors = validate(records, config, schema, erds) + validate_erds(erds, config) + check_crl(config)
     if errors:
         print("Validation failed:", *errors, sep="\n  ", file=sys.stderr)
         sys.exit(1)
-    print(f"Validated {len(records)} participant record(s).")
+    print(f"Validated {len(records)} participant record(s), {len(erds)} ERDS record(s).")
     if args.validate_only:
         return
 
@@ -455,7 +548,7 @@ def main():
     else:
         ap.error("need --key and --cert, or --ephemeral-key")
 
-    n = build_site(records, config, key_pem, cert_pem, args.out, xsd_validator(args.xsd_dir))
+    n = build_site(records, config, key_pem, cert_pem, args.out, xsd_validator(args.xsd_dir), erds)
     n_dns = build_dns(records, config, args.out)
     n_ok = self_check(args.out / "site", cert_pem)
     print(f"Built {n} ServiceMetadata entries; {n_ok} signed files verified"

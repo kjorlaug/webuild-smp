@@ -13,6 +13,8 @@ participant_schemes:                              # ID-03
   - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0192
   - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0088
   - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0208
+erds_profiles:                                    # ERDS-03: allowed ERDSProfileSupported values
+  - urn:webuild:erds:profile:etsi-en-319-522-4-1-as4  # PLACEHOLDER: ETSI defines no profile URI (open issue)
 transport_profiles:                               # TP-01, spec section 8
   - bdxr-transport-ebms3-as4-v1p0
   - webuild-transport-wmp-v1

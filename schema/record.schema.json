@@ -55,6 +55,7 @@
       "additionalProperties": false,
       "properties": {
         "transportProfile": {"type": "string"},
+        "erds": {"type": "string", "pattern": "^[a-z0-9-]+$", "description": "ERDS this endpoint belongs to: file name without extension under registry/erds/ (ERDS-01)"},
         "address": {"type": "string", "pattern": "^https://"},
         "description": {"type": "string"},
         "contact": {"type": "string"},
