@@ -79,7 +79,8 @@ def verify(xml: bytes, ca: Path) -> tuple[bool, str]:
 
 def probe(smp: str, participant: str, service: str, ca: Path):
     variants = {"full-encoded (ID-05)": (quote(participant, safe=""), quote(service, safe="")),
-                "':' unencoded (ID-06)": (quote(participant, safe=":"), quote(service, safe=":"))}
+                "':' unencoded (ID-06)": (quote(participant, safe=":"), quote(service, safe=":")),
+                "service lower-cased (ID-04)": (quote(participant, safe=""), quote(service.lower(), safe=""))}
     body = None
     for label, (pseg, sseg) in variants.items():
         url = f"{smp}/{PREFIX}/{pseg}/services/{sseg}"
@@ -102,10 +103,11 @@ def probe(smp: str, participant: str, service: str, ca: Path):
 
     url = f"{smp}/{PREFIX}/{quote(participant, safe='')}"
     try:
-        r = requests.get(url, timeout=15)
-        hops = " -> ".join(str(h.status_code) for h in r.history) or "direct"
+        # No redirects: phoss and other SMP clients do not follow them (SMP-04)
+        r = requests.get(url, timeout=15, allow_redirects=False)
         ok = r.status_code == 200 and b"ServiceGroup" in r.content
-        check("GET ServiceGroup (SMP-04)", ok, f"{r.status_code} via {hops}, {r.headers.get('content-type')}")
+        check("GET ServiceGroup without redirect (SMP-04)", ok,
+              f"{r.status_code} {r.headers.get('location', '')} {r.headers.get('content-type')}".strip())
         if ok:
             check("ServiceGroup Content-Type (SMP-05)", is_xml_ct(r), r.headers.get("content-type", "-"))
             check("ServiceGroup signature (SIG)", *verify(r.content, ca))

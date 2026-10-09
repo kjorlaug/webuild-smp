@@ -134,8 +134,9 @@ def validate(records, config, schema) -> list[str]:
         if key in seen:
             errors.append(f"{where}: duplicate participant, also in {seen[key].relative_to(ROOT)}")
         seen[key] = path
-        if len(encode_segment(norm_participant(p)).encode()) > 255:
-            errors.append(f"{where}: encoded participant identifier exceeds 255 bytes")
+        # +5: the ServiceGroup is also stored as '{participant}.html'
+        if len(encode_segment(norm_participant(p)).encode()) + 5 > 255:
+            errors.append(f"{where}: encoded participant identifier exceeds 250 bytes")
 
         service_keys = set()
         for s in rec["services"]:
@@ -327,13 +328,20 @@ def build_site(records, config, key_pem, cert_pem, out: Path, xsd) -> int:
         sg = emit(service_group(rec), "ServiceGroup")
         pdirs = path_variants(p, layouts)
         for pdir in pdirs:
-            # '/bdxr-smp-2/{participant}' is both a resource and the parent of 'services/':
-            # store the ServiceGroup as index.html in that directory (SMP-04).
+            # '/bdxr-smp-2/{participant}' is both a resource and the parent of 'services/'.
+            # Cloudflare Pages serves '{participant}.html' at '/{participant}' with 200 and no
+            # redirect; clients such as phoss do not follow HTTP redirects (SMP-04).
+            # index.html keeps '/{participant}/' working.
+            write(site / RESOURCE_PREFIX / f"{pdir}.html", sg)
             write(site / RESOURCE_PREFIX / pdir / "index.html", sg)
         for s in rec["services"]:
             data = emit(service_metadata(rec, s, path), "ServiceMetadata")
+            # SMP 2.0 identifiers are case-insensitive unless their scheme says otherwise, and
+            # clients fold them to lower case (phoss does for bdx-docid-qns). A static host cannot
+            # fold, so also store the lower-cased name (ID-04).
+            snames = dict.fromkeys(v for n in path_variants(s["service"], layouts) for v in (n, n.lower()))
             for pdir in pdirs:
-                for sdir in path_variants(s["service"], layouts):
+                for sdir in snames:
                     write(site / RESOURCE_PREFIX / pdir / "services" / sdir, data)
             index.append({"participant": full_id(p), "service": full_id(s["service"]),
                           "url": f"{base}/{RESOURCE_PREFIX}/{encode_segment(p)}/services/"
