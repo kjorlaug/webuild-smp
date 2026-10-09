@@ -14,7 +14,9 @@ config.yaml                        SMP URL, BDXL zone, mode, allowed schemes and
 schema/record.schema.json          record schema (REG-02)
 scripts/build.py                   validate, generate SMP 2.0 XML, sign, BDXL records
 scripts/smoke_test.py              sender-side conformance probe
+scripts/sync_dns_desec.py          pushes NAPTR records to a deSEC zone
 scripts/sync_dns_cloudflare.py     pushes NAPTR records to Cloudflare DNS
+scripts/wait_dns.py                waits until the BDXL zone's nameservers serve the records
 scripts/make_test_pki.py           test CA and SMP signing certificate
 .github/workflows/publish.yml      the pipeline
 ```
@@ -28,7 +30,7 @@ Resources are published at `{smp_base_url}/bdxr-smp-2/{participant}` (ServiceGro
 3. Put endpoint certificates in `registry/certs/` and reference them by relative path.
 4. Open a PR. The `validate` check must pass, and an operator other than you approves it.
 
-After the merge, changes are live within minutes. DNS follows its TTL, at most 1 hour.
+After the merge, changes are live within minutes; CI waits for new BDXL records before it probes them. Changed or removed DNS records follow their TTL, at most 1 hour.
 
 To remove a participant, delete its file.
 
@@ -38,18 +40,29 @@ The default host is Cloudflare Pages. SMP 2.0 requires `Content-Type: applicatio
 
 GitHub Pages also works (repository variable `HOSTING=github`). In that case the service deviates from SMP-05, and the smoke test reports it. The repository and pipeline stay on GitHub either way.
 
+## Pilot deployment
+
+| | |
+| --- | --- |
+| SMP | `https://smp.webuild.kjorlaug.no`: Cloudflare Pages project `webuild-smp`, CNAME at Domeneshop |
+| BDXL zone | `bdxl.webuild.kjorlaug.no`: deSEC, delegated with NS and DS records at Domeneshop (DNSSEC-signed) |
+| Trust anchor | `trust/webuild-smp-ca.pem`, test CA from `make_test_pki.py` (2026-10-09) |
+
 ## Setting up (operator)
 
 1. Create the PKI: `python scripts/make_test_pki.py --out ../webuild-smp-pki`
-   - Commit only `ca.cert.pem`, as `trust/webuild-smp-ca.pem`. **Replace the file shipped here, which is a throwaway.**
-   - Store `smp.key.pem` and `smp.cert.pem` as secrets `SMP_SIGNING_KEY` and `SMP_SIGNING_CERT`.
+   - Commit only `ca.cert.pem`, as `trust/webuild-smp-ca.pem`.
+   - Store `smp.key.pem` and `smp.cert.pem` as secrets `SMP_SIGNING_KEY` and `SMP_SIGNING_CERT`. The build fails fast if either is empty or not PEM.
    - Keep `ca.key.pem` offline.
-2. Cloudflare:
-   - Create a Pages project (direct upload) with the host of `smp_base_url` as its custom domain.
-   - Create the DNS zone for `bdxl_zone`.
-   - Add the secrets `CLOUDFLARE_API_TOKEN` (Pages:Edit and Zone.DNS:Edit), `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_ZONE_ID`, and the variable `CF_PAGES_PROJECT`.
-3. Branch protection on `main`: require a PR, 1 approval, and the `validate` check (REG-03).
-4. Edit the placeholders in `config.yaml`.
+2. Cloudflare Pages:
+   - Add the secrets `CLOUDFLARE_API_TOKEN` (Pages:Edit) and `CLOUDFLARE_ACCOUNT_ID`, and the variable `CF_PAGES_PROJECT`. The first deploy creates the project.
+   - Then add the host of `smp_base_url` as the project's custom domain, with a CNAME to `<project>.pages.dev` at your DNS host.
+3. BDXL zone for `bdxl_zone`. It needs a DNS host with NAPTR records and an API. Use one of:
+   - **deSEC** (pilot): create the zone, add NS and DS records for it in the parent zone, and add the secret `DESEC_TOKEN`.
+   - **Cloudflare DNS**: the zone must be on Cloudflare. Add the secret `CLOUDFLARE_ZONE_ID` and give the token Zone.DNS:Edit.
+   - Without either, CI skips the sync; load `dist/dns/naptr.zone` by hand.
+4. Branch protection on `main`: require a PR, 1 approval, and the `validate` check (REG-03).
+5. Set `smp_base_url`, `bdxl_zone` and the remaining placeholders in `config.yaml`.
 
 ## Local build and test
 
@@ -73,9 +86,9 @@ Results so far:
 - On the Cloudflare Pages emulator (`wrangler pages dev`), all 10 checks pass. It serves the **decoded** layout.
 - Python's `http.server` also serves the decoded layout, but it fails SMP-05 because it sends the wrong Content-Type.
 
-After the first real deploy, the `smoke` job runs the same probe against the live service. If the job is green, set `path_layouts: [decoded]`.
+- On live Cloudflare Pages (2026-10-09), all 12 checks pass, including BDXL, with only the decoded layout deployed. `path_layouts` is now `[decoded]`.
 
-Also run one real SMP 2.0 client (e.g. the BDXR2 client in phoss smp-client), configured with the WE BUILD BDXL zone and trust anchor.
+Still to do: run one real SMP 2.0 client (e.g. the BDXR2 client in phoss smp-client), configured with the WE BUILD BDXL zone and trust anchor (SPEC section 12).
 
 ## Known limitations of static hosting
 

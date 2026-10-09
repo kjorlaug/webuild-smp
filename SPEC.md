@@ -216,14 +216,14 @@ A sender or operator conforms if it meets every MUST in its column.
 
 ## 11. Reference implementation and testing
 
-The reference implementation is this repository; its YAML records are the registry. GitHub Actions turns the records into a static SMP 2.0 site on Cloudflare Pages and a set of BDXL records in Cloudflare DNS. There is no server-side code. GitHub Pages is supported as an alternative host, but it fails SMP-05 because it cannot set `Content-Type`.
+The reference implementation is this repository; its YAML records are the registry. GitHub Actions turns the records into a static SMP 2.0 site on Cloudflare Pages and a set of BDXL records in a DNS zone with an API (deSEC in the pilot deployment; Cloudflare DNS is also supported). There is no server-side code. GitHub Pages is supported as an alternative host, but it fails SMP-05 because it cannot set `Content-Type`.
 
 | Pipeline job | Runs on | Does | Spec |
 | --- | --- | --- | --- |
 | validate | every PR | Schema, lower-case IDs, allowed schemes and profiles, cert parse, dates, file-name length; trial build with a throwaway key; OASIS XSD validation | REG-02, ID-01, ID-03, TP-01, REG-05, SMP-02 |
 | build | merge to `main`, weekly | Generates and signs ServiceGroup and ServiceMetadata, validates against the XSDs, verifies its own signatures | SMP-02, SIG-01–03 |
 | deploy | after build | Publishes the site, with a `_headers` file that sets `application/xml` | SMP-01, SMP-05 |
-| dns | after deploy | Syncs U-NAPTR records to the BDXL zone | BDXL-03, BDXL-05, REG-04 |
+| dns | after deploy | Syncs U-NAPTR records to the BDXL zone, then waits until its authoritative servers serve them | BDXL-03, BDXL-05, REG-04 |
 | smoke | after dns | Probes the live service as a sender, including negative tests | Sections 5–7 |
 
 Tested on 2026-09-25 against the Cloudflare Pages local emulator (`wrangler pages dev`): all 10 probe checks pass.
@@ -233,6 +233,8 @@ Tested on 2026-09-25 against the Cloudflare Pages local emulator (`wrangler page
 - The ServiceGroup was served through a 308 redirect.
 - An unknown participant returned 404.
 - The emulator serves files stored under decoded names; files stored under encoded names get 404.
+
+Tested on 2026-10-09 against the live pilot deployment (`smp.webuild.kjorlaug.no` on Cloudflare Pages, BDXL zone `bdxl.webuild.kjorlaug.no` on deSEC, DNSSEC-signed and delegated with DS from `kjorlaug.no`): all 12 probe checks pass, including the BDXL lookup, with only the decoded layout deployed. Real Cloudflare Pages behaves like the emulator.
 - Invalid records were rejected by validation.
 
 For comparison, a plain static server failed SMP-05 on both resources. XSD validation runs in CI only, because the OASIS schema host could not be reached from the test environment.
@@ -251,7 +253,7 @@ The operator publishes the test participant and the expected results.
 - [x] **Live host check.** Confirm on real Cloudflare Pages what the emulator showed: decoded file names, `_headers` applied, 308 for the ServiceGroup. Then set `path_layouts: [decoded]`. *Done 2026-10-09 on smp.webuild.kjorlaug.no: decoded-only layout serves both encodings, `_headers` applied, ServiceGroup 200 via 308; smoke_test.py 10/10 (`--no-dns`).*
 - [ ] **Real client test.** Run at least one SMP 2.0 client, for example the BDXR2 client in phoss smp-client, with BDXL discovery. Include the redirect for the ServiceGroup.
 - [ ] **BDXL hash rule.** Confirm the WE BUILD rule of one label over the full identifier (BDXL-02) against what partner clients can configure. Some BDXL clients only offer the Peppol/eDelivery rule with a scheme label.
-- [ ] **Zone and host names.** Fix `bdxl_zone` and `smp_base_url`, and the Cloudflare account that runs Pages and DNS.
+- [x] **Zone and host names.** Fix `bdxl_zone` and `smp_base_url`, and the Cloudflare account that runs Pages and DNS. *Pilot: `smp.webuild.kjorlaug.no` (Cloudflare Pages) and `bdxl.webuild.kjorlaug.no` (deSEC, because the parent's DNS host, Domeneshop, has no NAPTR).*
 - [ ] **Participant schemes.** Confirm the ICD list for ID-03 against the pilot's participants.
 - [ ] **WE BUILD process and service identifiers.** Agree a URN namespace for SC5 processes and for WE BUILD-specific services, such as attestations.
 - [ ] **Transport profiles and anchors.** Define the AS4 test CA, the wallet anchor, and the WMP profile ID with the WMP authors.
