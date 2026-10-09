@@ -98,7 +98,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # First run: create the Pages project; later runs fail harmlessly because it exists.
-          preCommands: npx wrangler pages project create ${{ vars.CF_PAGES_PROJECT }} --production-branch=main || true
+          preCommands: npx --yes wrangler pages project create ${{ vars.CF_PAGES_PROJECT }} --production-branch=main || true
           command: pages deploy site --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
 
   deploy-github:
