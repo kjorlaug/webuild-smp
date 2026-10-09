@@ -136,8 +136,9 @@ jobs:
           elif [ -n "$CLOUDFLARE_ZONE_ID" ]; then
             python scripts/sync_dns_cloudflare.py
           else
-            echo "No DNS credentials; load dist/dns/naptr.zone into the BDXL zone manually."
+            echo "No DNS credentials; load dist/dns/naptr.zone into the BDXL zone manually."; exit 0
           fi
+          python scripts/wait_dns.py   # smoke must not query (and cache NXDOMAIN) before records are live
 
   smoke:
     needs: dns
