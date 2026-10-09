@@ -403,6 +403,10 @@ def main():
         key_pem, cert_pem = ephemeral_key()
     elif args.key and args.cert:
         key_pem, cert_pem = args.key.read_bytes(), args.cert.read_bytes()
+        if b"-----BEGIN CERTIFICATE-----" not in cert_pem:
+            sys.exit(f"{args.cert}: no PEM certificate (-----BEGIN CERTIFICATE-----); check SMP_SIGNING_CERT")
+        if b"PRIVATE KEY-----" not in key_pem:
+            sys.exit(f"{args.key}: no PEM private key (...PRIVATE KEY-----); check SMP_SIGNING_KEY")
     else:
         ap.error("need --key and --cert, or --ephemeral-key")
 

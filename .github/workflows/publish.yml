@@ -66,6 +66,9 @@ jobs:
           SMP_SIGNING_KEY: ${{ secrets.SMP_SIGNING_KEY }}
           SMP_SIGNING_CERT: ${{ secrets.SMP_SIGNING_CERT }}
         run: |
+          for s in SMP_SIGNING_KEY SMP_SIGNING_CERT; do
+            if [ -z "${!s}" ]; then echo "::error::Secret $s is empty or not set (SIG-06; see scripts/make_test_pki.py)"; exit 1; fi
+          done
           umask 077
           printf '%s\n' "$SMP_SIGNING_KEY"  > "$RUNNER_TEMP/smp.key.pem"
           printf '%s\n' "$SMP_SIGNING_CERT" > "$RUNNER_TEMP/smp.cert.pem"
@@ -91,6 +94,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # First run: create the Pages project; later runs fail harmlessly because it exists.
+          preCommands: npx wrangler pages project create ${{ vars.CF_PAGES_PROJECT }} --production-branch=main || true
           command: pages deploy site --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
 
   deploy-github:

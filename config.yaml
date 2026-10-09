@@ -1,6 +1,6 @@
 # WE BUILD SMP 2.0 / BDXL configuration. Values marked PLACEHOLDER must be decided.
-smp_base_url: https://smp.webuild.example         # PLACEHOLDER: host of the static site; resources live under /bdxr-smp-2/
-bdxl_zone: bdxl.webuild.example                   # PLACEHOLDER: BDXL-01 zone published to partners
+smp_base_url: https://smp.webuild.kjorlaug.no      # host of the static site; resources live under /bdxr-smp-2/
+bdxl_zone: bdxl.webuild.kjorlaug.no               # BDXL-01 zone published to partners
 bdxl_mode: explicit                               # BDXL-05: explicit | wildcard
 dns_ttl: 3600                                     # BDXL-06
 pilot_end_date: 2027-12-31                        # PLACEHOLDER: REG-05 upper bound for ExpirationDate
