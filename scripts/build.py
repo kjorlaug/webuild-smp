@@ -248,8 +248,9 @@ def validate(records, config, schema, erds=None) -> list[str]:
 # XML generation (spec section 6)
 # --------------------------------------------------------------------------
 def root_el(ns: str, tag: str):
+    # No default namespace: unqualified ERDS children (ERDS-02) must not inherit one.
     return etree.Element(f"{{{ns}}}{tag}",
-                         nsmap={None: ns, "smb": NS_SMB, "sma": NS_SMA, "ext": NS_EXT})
+                         nsmap={"sm" if ns == NS_SM else "sg": ns, "smb": NS_SMB, "sma": NS_SMA, "ext": NS_EXT})
 
 
 def sub(parent, ns, tag, text=None, **attrs):
@@ -441,10 +442,15 @@ def build_site(records, config, key_pem, cert_pem, out: Path, xsd, erds=None) ->
     layouts = config.get("path_layouts", ["decoded", "encoded"])
     index = []
 
+    erds_xsd = etree.XMLSchema(etree.parse(str(ERDS_XSD)))
+
     def emit(el, kind):
         signed = sign(el, key_pem, cert_pem)
+        doc = etree.fromstring(to_bytes(signed))                     # validate what is published
         if xsd:
-            xsd[kind].assertValid(etree.fromstring(to_bytes(signed)))   # SMP-02
+            xsd[kind].assertValid(doc)                               # SMP-02
+        for md in doc.iter(f"{{{NS_ERDS}}}ERDSMetadata"):            # ERDS-02
+            erds_xsd.assertValid(md)
         return to_bytes(signed)
 
     for path, rec in records:

@@ -4,3 +4,4 @@ __pycache__/
 .venv/
 xsd/
 tests/phoss-client/target/
+.DS_Store
