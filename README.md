@@ -33,8 +33,9 @@ Resources are published at `{smp_base_url}/bdxr-smp-2/{participant}` (ServiceGro
 1. Copy `registry/participants/0192_991825827.yaml`.
 2. Use an allowed participant scheme from `config.yaml`, in lower case. Add one entry per service (document type), with its process and endpoint(s).
 3. Put endpoint certificates in `registry/certs/` and reference them by relative path.
-4. If an endpoint belongs to an (Q)ERDS, add `erds: <name>` and, once per ERDS, a `registry/erds/<name>.yaml` (copy `example-qerds.yaml`). The SMP then publishes the ETSI `ERDSMetadata` for that endpoint (SPEC section 8.1).
-5. Open a PR. The `validate` check must pass, and an operator other than you approves it.
+4. A business wallet's OID4VC endpoints (credential offer, presentation request) are services of the business too; see the last two services in the example record and SPEC section 8.2. Their identifiers are placeholders.
+5. If an endpoint belongs to an (Q)ERDS, add `erds: <name>` and, once per ERDS, a `registry/erds/<name>.yaml` (copy `example-qerds.yaml`). The SMP then publishes the ETSI `ERDSMetadata` for that endpoint (SPEC section 8.1).
+6. Open a PR. The `validate` check must pass, and an operator other than you approves it.
 
 After the merge, changes are live within minutes; CI waits for new BDXL records before it probes them. Changed or removed DNS records follow their TTL, at most 1 hour.
 

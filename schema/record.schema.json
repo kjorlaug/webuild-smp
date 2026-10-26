@@ -51,7 +51,7 @@
     },
     "endpoint": {
       "type": "object",
-      "required": ["transportProfile", "address", "expirationDate", "certificates"],
+      "required": ["transportProfile", "address", "expirationDate"],
       "additionalProperties": false,
       "properties": {
         "transportProfile": {"type": "string"},

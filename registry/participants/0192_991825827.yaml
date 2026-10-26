@@ -29,3 +29,29 @@ services:
             expirationDate: "2027-12-31"
             certificates:
               - certificate: ../certs/example-ap.pem
+  # EBW OID4VC endpoints (SPEC 8.2, ADR "EBW's EAA extension for the EDD"). Service IDs, process ID
+  # and transport profiles are PLACEHOLDERS until WE BUILD agrees on them (SPEC section 12).
+  - service:
+      scheme: webuild-svcid
+      value: "urn:webuild:svc:oid4vci:credential-offer"
+    processMetadata:
+      - process:
+          value: "urn:webuild:proc:oid4vc:1.0"          # PLACEHOLDER
+        endpoints:
+          - transportProfile: webuild-transport-oid4vci-1.0
+            address: https://wallet.example.com/oid4vci/credential-offer
+            description: Example business wallet credential offer endpoint
+            contact: mailto:ops@wallet.example.com
+            expirationDate: "2027-12-31"
+  - service:
+      scheme: webuild-svcid
+      value: "urn:webuild:svc:oid4vp:authorization-request"
+    processMetadata:
+      - process:
+          value: "urn:webuild:proc:oid4vc:1.0"          # PLACEHOLDER
+        endpoints:
+          - transportProfile: webuild-transport-oid4vp-1.0
+            address: https://wallet.example.com/oid4vp/request
+            description: Example business wallet presentation request endpoint
+            contact: mailto:ops@wallet.example.com
+            expirationDate: "2027-12-31"

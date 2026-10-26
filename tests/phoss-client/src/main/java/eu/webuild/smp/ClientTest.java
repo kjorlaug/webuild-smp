@@ -21,7 +21,7 @@ import com.helger.xsds.bdxr.smp2.ac.ProcessMetadataType;
  * BDXL U-NAPTR discovery, ServiceGroup (through the static host's 308), ServiceMetadata,
  * XSD validation and XMLDSig verification against the WE BUILD trust anchor.
  *
- * Args: bdxlZone participant(scheme::value) documentType(scheme::value) trustAnchor.pem
+ * Args: bdxlZone participant(scheme::value) serviceIDs(scheme::value[,scheme::value...]) trustAnchor.pem
  */
 public final class ClientTest {
   private static int failures = 0;
@@ -36,8 +36,10 @@ public final class ClientTest {
     final String zone = args[0];
     final var idf = BDXR2IdentifierFactory.INSTANCE;
     final IParticipantIdentifier pid = idf.parseParticipantIdentifier(args[1]);
-    final IDocumentTypeIdentifier did = idf.parseDocumentTypeIdentifier(args[2]);
-    if (pid == null || did == null)
+    final java.util.List<IDocumentTypeIdentifier> dids = new java.util.ArrayList<>();
+    for (final String s : args[2].split(","))
+      dids.add(idf.parseDocumentTypeIdentifier(s));
+    if (pid == null || dids.contains(null))
       throw new IllegalArgumentException("Cannot parse identifiers " + args[1] + " / " + args[2]);
 
     final X509Certificate ca;
@@ -70,30 +72,33 @@ public final class ClientTest {
     final ServiceGroupType sg = client.getServiceGroupOrNull(pid);
     check("ServiceGroup (SMP-04)", sg != null,
           sg == null ? null : BDXR2ClientReadOnly.getAllDocumentTypes(sg, idf).size() + " service reference(s)");
-    if (sg != null)
-      check("ServiceGroup lists the document type", BDXR2ClientReadOnly.getAllDocumentTypes(sg, idf)
-                                                                         .containsAny(did::hasSameContent), did.getURIEncoded());
+    for (final IDocumentTypeIdentifier did : dids) {
+      System.out.println("\nService " + did.getURIEncoded());
+      if (sg != null)
+        check("ServiceGroup lists the service", BDXR2ClientReadOnly.getAllDocumentTypes(sg, idf)
+                                                                    .containsAny(did::hasSameContent), null);
 
-    final ServiceMetadataType sm = client.getServiceMetadataOrNull(pid, did);
-    check("ServiceMetadata, XSD-valid, signature verified against trust anchor (SIG)", sm != null, null);
-    if (sm != null) {
-      for (final ProcessMetadataType pm : sm.getProcessMetadata())
-        for (final EndpointType ep : pm.getEndpoint())
-        {
-          check("Endpoint", ep.getAddressURIValue() != null,
-                ep.getTransportProfileIDValue() + " -> " + ep.getAddressURIValue());
-          // ERDS-02: ETSI EN 319 522-3 ERDSMetadata as SMP 2.0 extension, as a sending ERDS reads it
-          if (ep.getSMPExtensions() != null)
-            for (final var ext : ep.getSMPExtensions().getSMPExtension())
-              if ("ERDSMetadata".equals(ext.getIDValue())) {
-                final org.w3c.dom.Element md = (org.w3c.dom.Element) ext.getExtensionContent().getAny();
-                final boolean ok = md != null && "http://uri.etsi.org/19522/v1#".equals(md.getNamespaceURI()) &&
-                                   "ERDSMetadata".equals(md.getLocalName());
-                check("  ERDSMetadata extension", ok, ok ? "domain " +
-                      md.getElementsByTagName("ERDSDomain").item(0).getTextContent() + ", profile " +
-                      md.getElementsByTagName("ERDSProfileSupported").item(0).getTextContent() : null);
-              }
-        }
+      final ServiceMetadataType sm = client.getServiceMetadataOrNull(pid, did);
+      check("ServiceMetadata, XSD-valid, signature verified against trust anchor (SIG)", sm != null, null);
+      if (sm != null) {
+        for (final ProcessMetadataType pm : sm.getProcessMetadata())
+          for (final EndpointType ep : pm.getEndpoint())
+          {
+            check("Endpoint", ep.getAddressURIValue() != null,
+                  ep.getTransportProfileIDValue() + " -> " + ep.getAddressURIValue());
+            // ERDS-02: ETSI EN 319 522-3 ERDSMetadata as SMP 2.0 extension, as a sending ERDS reads it
+            if (ep.getSMPExtensions() != null)
+              for (final var ext : ep.getSMPExtensions().getSMPExtension())
+                if ("ERDSMetadata".equals(ext.getIDValue())) {
+                  final org.w3c.dom.Element md = (org.w3c.dom.Element) ext.getExtensionContent().getAny();
+                  final boolean ok = md != null && "http://uri.etsi.org/19522/v1#".equals(md.getNamespaceURI()) &&
+                                     "ERDSMetadata".equals(md.getLocalName());
+                  check("  ERDSMetadata extension", ok, ok ? "domain " +
+                        md.getElementsByTagName("ERDSDomain").item(0).getTextContent() + ", profile " +
+                        md.getElementsByTagName("ERDSProfileSupported").item(0).getTextContent() : null);
+                }
+          }
+      }
     }
 
     final IParticipantIdentifier unknown = idf.createParticipantIdentifier(pid.getScheme(), "000000000");

@@ -18,3 +18,8 @@ erds_profiles:                                    # ERDS-03: allowed ERDSProfile
 transport_profiles:                               # TP-01, spec section 8
   - bdxr-transport-ebms3-as4-v1p0
   - webuild-transport-wmp-v1
+  - webuild-transport-oid4vci-1.0                 # PLACEHOLDER: EBW credential offer endpoint (OID-03)
+  - webuild-transport-oid4vp-1.0                  # PLACEHOLDER: EBW presentation request endpoint (OID-03)
+certificate_optional_profiles:                    # SMP-08 exception, PLACEHOLDER (OID-04, open issue)
+  - webuild-transport-oid4vci-1.0
+  - webuild-transport-oid4vp-1.0

@@ -222,6 +222,9 @@ def validate(records, config, schema, erds=None) -> list[str]:
                 for ep in pm["endpoints"]:
                     if ep["transportProfile"] not in profiles:                      # TP-01
                         errors.append(f"{where}: unknown transport profile {ep['transportProfile']} (TP-01)")
+                    if not ep.get("certificates") and \
+                            ep["transportProfile"] not in config.get("certificate_optional_profiles", []):
+                        errors.append(f"{where}: endpoint needs at least one certificate (SMP-08)")
                     if ep.get("erds") and ep["erds"] not in (erds or {}):           # ERDS-01
                         errors.append(f"{where}: endpoint references unknown ERDS '{ep['erds']}' "
                                       f"(no registry/erds/{ep['erds']}.yaml)")
