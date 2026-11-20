@@ -1,0 +1,34 @@
+# SIROS Foundation AB — the Madrid interop registration (DRAFT for the
+# kjorlaug/webuild-smp registry PR). The participant: the Swedish
+# organisationsnummer 5595421925 (ICD 0007 - the scheme Upphandlingsmyndigheten
+# and SFTI recommend first for Swedish organisations), the value lower-cased
+# and hyphen-stripped per ID-01/ID-02.
+#
+# NOTE: the registry's config.yaml participant_schemes (ID-03) does not list
+# 0007 yet - the PR asks for it (the same pattern as Cleverbase's 0106 ask).
+participant:
+  scheme: urn:oasis:names:tc:ebcore:partyid-type:iso6523:0007   # lower case (ID-01)
+  value: "5595421925"                                            # hyphen stripped (ID-01/ID-02)
+  name: SIROS Foundation AB
+  registrant: SIROS Foundation AB
+services:
+  - service:
+      scheme: bdx-docid-qns
+      value: "urn:webuild:qerds:wmp-test:1.0"       # PLACEHOLDER: the agreed demo document type
+    processMetadata:
+      - process:
+          value: "urn:webuild:proc:wmp-test:1.0"     # PLACEHOLDER
+        endpoints:
+          - transportProfile: webuild-transport-wmp-v1
+            address: https://sirosid-gdc-wallet-proxy.fly.dev/wmp-engine/wmp
+            description: SIROS GDC demo WMP engine (HTTP+SSE: the invitation, mailbox, MCP tool surface and MLS groups - Madrid levels 0-3)
+            contact: mailto:leifj@siros.org
+            expirationDate: "2027-12-31"
+            # Test mode (the ladder's own agreement): no qualified certificate
+            # behind this endpoint yet - the test CA decision is pending in
+            # the Slack channel ("Test trust anchor").
+  # The well-known configuration (PR siros-wallet-core #85, v0.3.3): served at
+  # /.well-known/wmp-configuration through the same location.
+  # No OID4VC services in the SMP record yet: the wallet's issuance endpoints
+  # ride the same engine origin; whether they register as services follows
+  # the EBW EAA decision (SPEC 8.2 placeholders).

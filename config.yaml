@@ -10,6 +10,7 @@ crl_file: trust/webuild-smp-ca.crl                # SIG-09: published at /trust/
 # decoded file names serve both encodings (live-host check, SPEC section 12).
 path_layouts: [decoded]
 participant_schemes:                              # ID-03
+  - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0007   # Sweden, Organisationsnummer (Bolagsverket) - requested by this PR (SIROS's registration)
   - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0192
   - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0088
   - urn:oasis:names:tc:ebcore:partyid-type:iso6523:0208
